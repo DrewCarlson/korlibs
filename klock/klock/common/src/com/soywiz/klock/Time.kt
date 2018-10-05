@@ -514,7 +514,7 @@ inline val Number.seconds get() = TimeSpan.fromMilliseconds((this.toDouble() * 1
 
 class SimplerDateFormat(val format: String) {
 	companion object {
-		private val rx = Regex("('[\\w]+'|[\\w]+\\B[^X]|[X]{1,3}|[\\w]+)")
+		private val rx = Regex("('[\\w]+'|[\\w]+\\B[^Xx]|[Xx]{1,3}|[\\w]+)")
 		private val englishDaysOfWeek = listOf(
 			"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"
 		)
@@ -551,7 +551,7 @@ class SimplerDateFormat(val format: String) {
 		parts += v
 		if (v.startsWith("'")) {
 			"(" + Regex.escapeReplacement(v.trim('\'')) + ")"
-		} else if (v.startsWith("X")) {
+		} else if (v.startsWith('X', ignoreCase = true)) {
 			"([Z]|[+-]\\d\\d|[+-]\\d\\d\\d\\d|[+-]\\d\\d:\\d\\d)?"
 		} else {
 			"([\\w\\+\\-]+?[^Z^+^-])"
@@ -581,15 +581,18 @@ class SimplerDateFormat(val format: String) {
 				"HH" -> "%02d".format(dd.hours)
 				"mm" -> "%02d".format(dd.minutes)
 				"ss" -> "%02d".format(dd.seconds)
-				"X", "XX", "XXX" -> {
-					val p = if (dd.offset >= 0) "+" else "-"
-					val hours = dd.offset / 60
-					val minutes = dd.offset % 60
-					when (name) {
-						"X" -> "$p${"%02d".format(hours)}"
-						"XX" -> "$p${"%02d".format(hours)}${"%02d".format(minutes)}"
-						"XXX" -> "$p${"%02d".format(hours)}:${"%02d".format(minutes)}"
-						else -> name
+				"X", "XX", "XXX", "x", "xx", "xxx" -> when {
+					name.startsWith("X") && dd.offset == 0 -> "Z"
+					else -> {
+						val p = if (dd.offset >= 0) "+" else "-"
+						val hours = dd.offset / 60
+						val minutes = dd.offset % 60
+						when (name) {
+							"X", "x" -> "$p%02d".format(hours)
+							"XX", "xx" -> "$p%02d%02d".format(hours, minutes)
+							"XXX", "xxx" -> "$p%02d:%02d".format(hours, minutes)
+							else -> name
+						}
 					}
 				}
 				else -> name
@@ -631,9 +634,12 @@ class SimplerDateFormat(val format: String) {
 				"HH" -> hour = value.toInt()
 				"mm" -> minute = value.toInt()
 				"ss" -> second = value.toInt()
-				"X", "XX", "XXX" -> when {
-					value.first() == 'Z' -> offset = 0
-					else -> {
+				"X", "XX", "XXX", "x", "xx", "xxx" -> when {
+					name.startsWith("X") && value.first() == 'Z' -> offset = 0
+					name.startsWith("x") && value.first() == 'Z' -> {
+						throw RuntimeException("Zulu Time Zone is only accepted with X-XXX formats.")
+					}
+					value.first() != 'Z' -> {
 						val hours = value.drop(1).substringBefore(':').toInt()
 						val minutes = value.substringAfter(':', "0").toInt()
 						offset = (hours * 60) + minutes
